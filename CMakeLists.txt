@@ -10,9 +10,9 @@ block()
     if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/../common/${fileName}")
         file(REMOVE "${CMAKE_CURRENT_BINARY_DIR}/tmp/${fileName}")
         file(DOWNLOAD
-            "https://raw.githubusercontent.com/exqudens/exqudens-cmake/1.0.1/src/main/cmake/${fileName}"
+            "https://raw.githubusercontent.com/exqudens/exqudens-cmake/2.0.0/src/main/cmake/${fileName}"
             "${CMAKE_CURRENT_BINARY_DIR}/tmp/${fileName}"
-            EXPECTED_MD5 "d7dd546adf3830d9eb6cca7b0dda7d4e"
+            EXPECTED_MD5 "7e375203230f05ebfb625ad455854449"
             STATUS downloadStatus
         )
         if(NOT "${downloadStatus}" STREQUAL "0;\"No error\"")
@@ -53,6 +53,8 @@ elseif("gcc" IN_LIST PRESET_NAME_ELEMENTS)
         find_program(CONAN_COMMAND NAMES "conan" PATHS ENV CONAN_PATH ENV PATH REQUIRED NO_CACHE NO_DEFAULT_PATH)
     endif()
 endif()
+
+message(STATUS "CMAKE_TOOLCHAIN_FILE: '${CMAKE_TOOLCHAIN_FILE}'")
 
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/name-version.txt" INFO)
 string(REPLACE ":" ";" INFO_LIST "${INFO}")
@@ -150,10 +152,31 @@ set(INLINE_MACRO "#  define ${INLINE_MACRO_NAME}")
 if("${INTERFACE_ONLY}")
     set(INLINE_MACRO "#  define ${INLINE_MACRO_NAME} inline")
 endif()
-string(JOIN "\n" INLINE_MACRO_CONTENT
+string(MAKE_C_IDENTIFIER "${PROJECT_NAME}_EXPORTS" EXPORTS_MACRO_NAME)
+string(JOIN "\n" EXPORT_HEADER_CUSTOM_CONTENT
+    ""
+    "#ifdef EXQUDENS_LOG_EASYLOGGINGPP_STATIC_DEFINE"
+    "#  define EXQUDENS_LOG_API_EXPORT"
+    "#else"
+    "#  ifdef ${EXPORTS_MACRO_NAME}"
+    "#    ifdef _WIN32"
+    "#      define EXQUDENS_LOG_API_EXPORT __declspec(dllexport)"
+    "#    else"
+    "#      define EXQUDENS_LOG_API_EXPORT __attribute__((visibility(\"default\")))"
+    "#    endif /* _WIN32 */"
+    "#  else"
+    "#    ifdef _WIN32"
+    "#      define EXQUDENS_LOG_API_EXPORT __declspec(dllimport)"
+    "#    else"
+    "#      define EXQUDENS_LOG_API_EXPORT __attribute__((visibility(\"default\")))"
+    "#    endif /* _WIN32 */"
+    "#  endif /* ${EXPORTS_MACRO_NAME} */"
+    "#endif /* EXQUDENS_LOG_EASYLOGGINGPP_STATIC_DEFINE */"
+    ""
     "#ifndef ${INLINE_MACRO_NAME}"
     "${INLINE_MACRO}"
-    "#endif /* ${INLINE_MACRO_NAME} */\n"
+    "#endif /* ${INLINE_MACRO_NAME} */"
+    ""
 )
 
 set(TARGET_CMAKE_INSTALL_DEPENDS_ON "${PROJECT_NAME}")
@@ -174,6 +197,11 @@ if(NOT "${SKIP_TEST}")
     message(STATUS "TEST_REGEXP: '${TEST_REGEXP}'")
 endif()
 
+message(STATUS "TARGET_CMAKE_INSTALL_DEPENDS_ON:")
+foreach(v IN LISTS "TARGET_CMAKE_INSTALL_DEPENDS_ON")
+    message(STATUS "${v}")
+endforeach()
+
 set(CONAN_INSTALL_PREFIX "${PROJECT_BINARY_DIR}/conan-install")
 
 file(MAKE_DIRECTORY "${CONAN_INSTALL_PREFIX}/bin")
@@ -189,27 +217,31 @@ if("${USE_CONAN}")
     set_conan_compiler(CONAN_COMPILER "${CMAKE_CXX_COMPILER_ID}")
     set_conan_compiler_version(CONAN_COMPILER_VERSION "${CMAKE_CXX_COMPILER_ID}" "${CMAKE_CXX_COMPILER_VERSION}" MAX_ELEMENTS "1")
     set_conan_compiler_runtime(CONAN_COMPILER_RUNTIME "${CMAKE_MSVC_RUNTIME_LIBRARY}")
+    set_conan_compiler_runtime_type(CONAN_COMPILER_RUNTIME_TYPE "${CMAKE_MSVC_RUNTIME_LIBRARY}")
 
-    set_python_boolean(CONAN_INTERFACE_ONLY "${INTERFACE_ONLY}")
-    set_python_boolean(CONAN_BUILD_SHARED_LIBS "${BUILD_SHARED_LIBS}")
+    #set_python_boolean(CONAN_INTERFACE "${INTERFACE_ONLY}")
+    set_python_boolean(CONAN_SHARED "${BUILD_SHARED_LIBS}")
 
     set_conan_settings(CONAN_SETTINGS
         "arch=${CONAN_ARCH}"
         "os=${CMAKE_SYSTEM_NAME}"
         "compiler=${CONAN_COMPILER}"
         "compiler.version=${CONAN_COMPILER_VERSION}"
+        "compiler.cstd=${CMAKE_C_STANDARD}"
+        "compiler.cppstd=${CMAKE_CXX_STANDARD}"
         "compiler.runtime=${CONAN_COMPILER_RUNTIME}"
+        "compiler.runtime_type=${CONAN_COMPILER_RUNTIME_TYPE}"
         "compiler.libcxx=${CONAN_COMPILER_LIBCXX}"
         "build_type=${CMAKE_BUILD_TYPE}"
     )
     set_conan_options(CONAN_OPTIONS
-        "interface=${CONAN_INTERFACE_ONLY}"
-        "shared=${CONAN_BUILD_SHARED_LIBS}"
+        "&:shared=${CONAN_SHARED}"
+        "*:shared=${CONAN_SHARED}"
     )
     if(NOT EXISTS "${CONAN_INSTALL_PREFIX}/conan-packages.cmake")
         execute_process(
             COMMAND "${CONAN_COMMAND}" "install"
-                    "--install-folder" "${CONAN_INSTALL_PREFIX}"
+                    "--output-folder" "${CONAN_INSTALL_PREFIX}"
                     ${CONAN_SETTINGS}
                     ${CONAN_OPTIONS}
                     "${PROJECT_SOURCE_DIR}/conanfile.py"
@@ -266,7 +298,7 @@ if("${USE_CONAN}")
         if(NOT EXISTS "${CONAN_INSTALL_TEST_PREFIX}/conan-packages.cmake")
             execute_process(
                 COMMAND "${CONAN_COMMAND}" "install"
-                        "--install-folder" "${CONAN_INSTALL_TEST_PREFIX}"
+                        "--output-folder" "${CONAN_INSTALL_TEST_PREFIX}"
                         ${CONAN_SETTINGS}
                         ${CONAN_OPTIONS}
                         "${PROJECT_SOURCE_DIR}/test-conanfile.py"
@@ -280,6 +312,7 @@ if("${USE_CONAN}")
         endif()
         include("${CONAN_INSTALL_TEST_PREFIX}/conan-packages.cmake")
         list(APPEND CMAKE_MODULE_PATH "${CONAN_INSTALL_TEST_PREFIX}")
+        list(APPEND CMAKE_PREFIX_PATH "${CONAN_INSTALL_TEST_PREFIX}")
         foreach(
             conanPackageName
             cmakePackageName
@@ -325,12 +358,10 @@ endif()
 if("${${PROJECT_NAME}_CMAKE_FIND_PACKAGE_NAMES}" STREQUAL "")
     set("${PROJECT_NAME}_CMAKE_FIND_PACKAGE_NAMES"
         "exqudens-cpp-log-api"
-        "Easyloggingpp"
     )
     if(NOT "${SKIP_TEST}")
         list(APPEND "${PROJECT_NAME}_CMAKE_FIND_PACKAGE_NAMES"
             "GTest"
-            "plog"
         )
     endif()
 endif()
@@ -341,19 +372,13 @@ endforeach()
 unset(NOT_FOUND_PACKAGE_NAMES)
 foreach(cmakePackageName IN LISTS "${PROJECT_NAME}_CMAKE_FIND_PACKAGE_NAMES")
     if("exqudens-cpp-log-api" STREQUAL "${cmakePackageName}")
-        file(REMOVE "${CONAN_INSTALL_PREFIX}/Find${cmakePackageName}.cmake")
-        list(APPEND NOT_FOUND_PACKAGE_NAMES "${cmakePackageName}")
-        find_package("${cmakePackageName}" "${${PROJECT_NAME}_CMAKE_PACKAGE_${cmakePackageName}_VERSION}" EXACT QUIET)
-    elseif("Easyloggingpp" STREQUAL "${cmakePackageName}")
-        file(REMOVE "${CONAN_INSTALL_PREFIX}/Find${cmakePackageName}.cmake")
+        file(REMOVE "${CONAN_INSTALL_TEST_PREFIX}/${cmakePackageName}Config.cmake")
+        file(REMOVE "${CONAN_INSTALL_TEST_PREFIX}/${cmakePackageName}-config.cmake")
         list(APPEND NOT_FOUND_PACKAGE_NAMES "${cmakePackageName}")
         find_package("${cmakePackageName}" "${${PROJECT_NAME}_CMAKE_PACKAGE_${cmakePackageName}_VERSION}" EXACT QUIET)
     elseif("GTest" STREQUAL "${cmakePackageName}")
-        file(REMOVE "${CONAN_INSTALL_TEST_PREFIX}/Find${cmakePackageName}.cmake")
-        list(APPEND NOT_FOUND_PACKAGE_NAMES "${cmakePackageName}")
-        find_package("${cmakePackageName}" "${${PROJECT_NAME}_CMAKE_PACKAGE_${cmakePackageName}_VERSION}" EXACT QUIET)
-    elseif("plog" STREQUAL "${cmakePackageName}")
-        #file(REMOVE "${CONAN_INSTALL_TEST_PREFIX}/Find${cmakePackageName}.cmake")
+        file(REMOVE "${CONAN_INSTALL_TEST_PREFIX}/${cmakePackageName}Config.cmake")
+        file(REMOVE "${CONAN_INSTALL_TEST_PREFIX}/${cmakePackageName}-config.cmake")
         list(APPEND NOT_FOUND_PACKAGE_NAMES "${cmakePackageName}")
         find_package("${cmakePackageName}" "${${PROJECT_NAME}_CMAKE_PACKAGE_${cmakePackageName}_VERSION}" EXACT QUIET)
     else()
@@ -401,7 +426,7 @@ if("${INTERFACE_ONLY}")
         "#  define ${BASE_NAME}_EXPORT\n"
         "#endif /* ${BASE_NAME}_EXPORT */\n"
         "\n"
-        "${INLINE_MACRO_CONTENT}"
+        "${EXPORT_HEADER_CUSTOM_CONTENT}"
         "\n"
         "#endif /* ${BASE_NAME}_EXPORT_H */\n"
     )
@@ -417,21 +442,22 @@ else()
     generate_export_header("${PROJECT_NAME}"
         BASE_NAME "${BASE_NAME}"
         EXPORT_FILE_NAME "generated/src/main/cpp/${BASE_DIR}/export.hpp"
-        CUSTOM_CONTENT_FROM_VARIABLE "INLINE_MACRO_CONTENT"
+        CUSTOM_CONTENT_FROM_VARIABLE "EXPORT_HEADER_CUSTOM_CONTENT"
     )
     if("${BUILD_SHARED_LIBS}")
-        #[[set_target_properties("${PROJECT_NAME}" PROPERTIES COMPILE_DEFINITIONS
-            "__BASE_FILE__=\"${PROJECT_SOURCE_DIR}/src/main/cpp\""
+        #[[target_compile_definitions("${PROJECT_NAME}" PUBLIC
+            "EXQUDENS_LOG_API_EXPORT=__declspec(dllexport)"
+            "EXQUDENS_LOG_API_EXPORT=__declspec(dllimport)"
         )]]
     else()
-        set_target_properties("${PROJECT_NAME}" PROPERTIES COMPILE_DEFINITIONS
-            #"__BASE_FILE__=\"${PROJECT_SOURCE_DIR}/src/main/cpp\""
+        target_compile_definitions("${PROJECT_NAME}" PUBLIC
             "${BASE_NAME}_STATIC_DEFINE"
         )
     endif()
     target_include_directories("${PROJECT_NAME}" PUBLIC
         "$<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/generated/src/main/cpp>"
         "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/main/cpp>"
+        "$<BUILD_INTERFACE:${CONAN_INSTALL_PREFIX}/easyloggingpp/include>"
         "$<INSTALL_INTERFACE:include>"
     )
     set_target_properties("${PROJECT_NAME}" PROPERTIES
@@ -456,7 +482,6 @@ else()
 endif()
 target_link_libraries("${PROJECT_NAME}" PUBLIC
     "exqudens-cpp-log-api::exqudens-cpp-log-api"
-    "Easyloggingpp::Easyloggingpp"
 )
 #set_property(TARGET "${PROJECT_NAME}" PROPERTY "VERSION" "${PROJECT_VERSION}")
 #set_property(TARGET "${PROJECT_NAME}" PROPERTY "SOVERSION" "${PROJECT_VERSION}")
@@ -502,10 +527,11 @@ install(
 )
 
 if(NOT "${SKIP_TEST}")
-    add_library("test-lib" STATIC
+    add_library("test-lib"
         "src/test/cpp/TestConfig.hpp"
         "src/test/cpp/TestConfig.cpp"
         "src/test/cpp/TestLog.hpp"
+        "src/test/cpp/TestLog.cpp"
         "src/test/cpp/TestUtils.hpp"
         "src/test/cpp/TestUtils.cpp"
         "src/test/cpp/TestApplication.hpp"
@@ -522,7 +548,6 @@ if(NOT "${SKIP_TEST}")
         "GTest::gtest"
         "GTest::gmock_main"
         "GTest::gtest_main"
-        "plog::plog"
     )
     set_target_properties("test-lib" PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY                "${PROJECT_BINARY_DIR}/test/bin"
@@ -594,20 +619,27 @@ if(NOT "${SKIP_TEST}")
     gtest_discover_tests("test-app"
         EXTRA_ARGS "--logging-config" "${PROJECT_SOURCE_DIR}/src/test/resources/logging-config.txt"
         WORKING_DIRECTORY "${PROJECT_BINARY_DIR}/test/bin"
-        PROPERTIES XML_OUTPUT_DIR "${PROJECT_BINARY_DIR}/test/report/xml"
-                   #ENVIRONMENT "PARENT_PATH=;PATH="
+        PROPERTIES ENVIRONMENT "PATH=$<TARGET_PROPERTY:test-app,RUNTIME_OUTPUT_DIRECTORY>"
+                   ENVIRONMENT "PROJECT_BINARY_DIR=${PROJECT_BINARY_DIR}"
+                   #XML_OUTPUT_DIR "${PROJECT_BINARY_DIR}/test/report/xml"
     )
 
-    add_custom_target("cmake-test"
-        COMMAND "${CMAKE_CTEST_COMMAND}" --preset "${PRESET_NAME}" "-R" "${TEST_REGEXP}"
+    add_custom_command(
+        OUTPUT "${PROJECT_BINARY_DIR}/junit.xml"
+        COMMAND "${CMAKE_CTEST_COMMAND}" "--build-nocmake" "--output-junit" "${PROJECT_BINARY_DIR}/junit.xml" "--preset" "${PRESET_NAME}" "-R" "${TEST_REGEXP}"
         DEPENDS "test-app"
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
         USES_TERMINAL
         VERBATIM
     )
+
+    add_custom_target("cmake-test"
+        DEPENDS "${PROJECT_BINARY_DIR}/junit.xml"
+    )
 endif()
 
-add_custom_target("cmake-install" ALL
+add_custom_command(
+    OUTPUT "${CMAKE_INSTALL_PREFIX}/cmake/${PROJECT_NAME}-config.cmake"
     COMMAND "${CMAKE_COMMAND}" --install "${PROJECT_BINARY_DIR}" --prefix "${CMAKE_INSTALL_PREFIX}"
     DEPENDS ${TARGET_CMAKE_INSTALL_DEPENDS_ON}
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
@@ -615,15 +647,33 @@ add_custom_target("cmake-install" ALL
     VERBATIM
 )
 
+add_custom_target("cmake-install" ALL
+    DEPENDS "${CMAKE_INSTALL_PREFIX}/cmake/${PROJECT_NAME}-config.cmake"
+)
+
 add_custom_target("conan-export"
     COMMAND "${CONAN_COMMAND}" "export-pkg"
-            "--force"
-            "--package-folder" "${CMAKE_INSTALL_PREFIX}"
+            "--output-folder" "${CMAKE_INSTALL_PREFIX}"
             ${CONAN_SETTINGS}
             ${CONAN_OPTIONS}
+            #"--user" "gitlab-group+gitlab-sub-group+${PROJECT_NAME}"
+            #"--channel" "stable"
             "${PROJECT_SOURCE_DIR}/conanfile.py"
-            #"gitlab-group+gitlab-sub-group+${PROJECT_NAME}/stable"
     DEPENDS "cmake-install"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+    USES_TERMINAL
+    VERBATIM
+)
+
+add_custom_target("conan-remove"
+    COMMAND "${CONAN_COMMAND}" "remove" "-c" "${PROJECT_NAME}/${PROJECT_VERSION}"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+    USES_TERMINAL
+    VERBATIM
+)
+
+add_custom_target("conan-list"
+    COMMAND "${CONAN_COMMAND}" "list" "${PROJECT_NAME}/${PROJECT_VERSION}:*"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
     USES_TERMINAL
     VERBATIM

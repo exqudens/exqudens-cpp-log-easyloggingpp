@@ -15,6 +15,8 @@ class TestUtils {
 
         static std::string toString(const std::exception& exception);
 
+        static std::optional<std::string> getEnvVar(const std::string& name);
+
         static std::string ltrim(const std::string& value);
 
         static std::string rtrim(const std::string& value);

@@ -7,6 +7,7 @@
 #include <string>
 
 #include "exqudens/log/easyloggingpp/export.hpp"
+#include <exqudens/log/api/Logging.hpp>
 
 namespace exqudens::log::easyloggingpp {
 

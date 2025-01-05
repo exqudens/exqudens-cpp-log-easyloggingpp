@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cctype>
+#include <cstdlib>
 #include <stdexcept>
 #include <filesystem>
 #include <numeric>
@@ -52,6 +53,19 @@ std::string TestUtils::toString(const std::exception& exception) {
             }
         }
         return out.str();
+    } catch (...) {
+        std::throw_with_nested(std::runtime_error(CALL_INFO));
+    }
+}
+
+std::optional<std::string> TestUtils::getEnvVar(const std::string& name) {
+    try {
+        std::optional<std::string> result = {};
+        const char* buffer = getenv(name.c_str());
+        if (buffer != nullptr) {
+            result.emplace(std::string(buffer));
+        }
+        return result;
     } catch (...) {
         std::throw_with_nested(std::runtime_error(CALL_INFO));
     }

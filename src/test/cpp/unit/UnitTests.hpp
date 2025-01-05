@@ -7,10 +7,10 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "exqudens/log/easyloggingpp/Logging.hpp"
 #include "TestUtils.hpp"
 #include "TestConfig.hpp"
 #include "TestLog.hpp"
-#include <exqudens/log/api/Logging.hpp>
 
 namespace exqudens::log::easyloggingpp {
 
@@ -20,184 +20,137 @@ namespace exqudens::log::easyloggingpp {
 
             inline static const char* LOGGER_ID = "exqudens.log.easyloggingpp.UnitTests";
 
+            std::string currentWorkingDir = "";
+            std::string currentProjectDir = "";
+            std::string currentProjectBinaryDir = "";
+            std::string currentTestGroup = "";
+            std::string currentTestCase = "";
+            std::string currentTestResourcesDir = "";
+            std::string currentTestOutputDir = "";
+
+            void SetUp() override {
+                currentWorkingDir = std::filesystem::current_path().generic_string();
+                ASSERT_FALSE(currentWorkingDir.empty());
+
+                currentProjectDir = std::filesystem::weakly_canonical(std::filesystem::path(__FILE__) / ".." / ".." / ".." / ".." / "..").generic_string();
+                ASSERT_FALSE(currentProjectDir.empty());
+
+                currentProjectBinaryDir = std::filesystem::weakly_canonical(std::filesystem::path(TestUtils::getEnvVar("PROJECT_BINARY_DIR").value())).generic_string();
+                ASSERT_FALSE(currentProjectBinaryDir.empty());
+
+                currentTestGroup = testing::UnitTest::GetInstance()->current_test_info()->test_suite_name();
+                ASSERT_FALSE(currentTestGroup.empty());
+
+                currentTestCase = testing::UnitTest::GetInstance()->current_test_info()->name();
+                ASSERT_FALSE(currentTestCase.empty());
+
+                currentTestResourcesDir = std::filesystem::weakly_canonical(std::filesystem::path(currentProjectDir) / "src" / "test" / "resources" / currentTestGroup / currentTestCase).generic_string();
+                ASSERT_FALSE(currentTestResourcesDir.empty());
+
+                currentTestOutputDir = std::filesystem::weakly_canonical(std::filesystem::path(currentProjectBinaryDir) / "test" / "output" / currentTestGroup / currentTestCase).generic_string();
+                ASSERT_FALSE(currentTestOutputDir.empty());
+
+                std::filesystem::remove_all(currentTestOutputDir);
+                std::filesystem::create_directories(currentTestOutputDir);
+                std::filesystem::copy(currentTestResourcesDir, currentTestOutputDir, std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
+                std::filesystem::current_path(std::filesystem::path(currentTestOutputDir));
+            }
+
+            void TearDown() override {
+                std::filesystem::current_path(std::filesystem::path(currentWorkingDir));
+
+                currentWorkingDir = "";
+                ASSERT_TRUE(currentWorkingDir.empty());
+
+                currentProjectDir = "";
+                ASSERT_TRUE(currentProjectDir.empty());
+
+                currentProjectBinaryDir = "";
+                ASSERT_TRUE(currentProjectBinaryDir.empty());
+
+                currentTestGroup = "";
+                ASSERT_TRUE(currentTestGroup.empty());
+
+                currentTestCase = "";
+                ASSERT_TRUE(currentTestCase.empty());
+
+                currentTestResourcesDir = "";
+                ASSERT_TRUE(currentTestResourcesDir.empty());
+
+                currentTestOutputDir = "";
+                ASSERT_TRUE(currentTestOutputDir.empty());
+            }
+
     };
 
     TEST_F(UnitTests, test1) {
         try {
-            std::string testGroup = testing::UnitTest::GetInstance()->current_test_info()->test_suite_name();
-            std::string testCase = testing::UnitTest::GetInstance()->current_test_info()->name();
-            PLOGI << "'" << testGroup << "." << testCase << "' start";
+            TEST_LOG_I(LOGGER_ID) << "bgn";
 
-            if (std::filesystem::exists(std::filesystem::path(TestConfig::getExecutableDir()) / "log.txt")) {
-                std::filesystem::remove(std::filesystem::path(TestConfig::getExecutableDir()) / "log.txt");
-            }
-
-            // command line bgn ----------------------------------------------------------------------------------------------------
-
-            std::vector<std::string> arguments = {
-                TestConfig::getExecutableFile(),
-
-                "--" + exqudens::log::api::Logging::getKey(),
-
-                (std::filesystem::path(__FILE__) / ".." / ".." / ".." / "resources" / testGroup / testCase / "command-line.txt").generic_string()
-            };
-            PLOGI << "arguments: " << TestUtils::join(arguments, ", ", "[", "]");
-
-            bool expectedConfigured = false;
-            PLOGI << "expectedConfigured: " << expectedConfigured;
-            bool actualConfigured = exqudens::log::api::Logging::isConfigured();
-            PLOGI << "actualConfigured: " << actualConfigured;
-
-            ASSERT_EQ(expectedConfigured, actualConfigured);
-
-            std::string expectedConfiguredType = std::string("full-path: '") + arguments.at(2) + "'";
-            PLOGI << "expectedConfiguredType: '" << expectedConfiguredType << "'";
-            std::string actualConfiguredType = exqudens::log::api::Logging::configure(arguments);
-            PLOGI << "actualConfiguredType: '" << actualConfiguredType << "'";
-
-            ASSERT_EQ(expectedConfiguredType, actualConfiguredType);
-
-            expectedConfigured = true;
-            PLOGI << "expectedConfigured: " << expectedConfigured;
-            actualConfigured = exqudens::log::api::Logging::isConfigured();
-            PLOGI << "actualConfigured: " << actualConfigured;
-
-            ASSERT_EQ(expectedConfigured, actualConfigured);
-
-            expectedConfiguredType = "configured";
-            PLOGI << "expectedConfiguredType: '" << expectedConfiguredType << "'";
-            actualConfiguredType = exqudens::log::api::Logging::configure(arguments);
-            PLOGI << "actualConfiguredType: '" << actualConfiguredType << "'";
-
-            ASSERT_EQ(expectedConfiguredType, actualConfiguredType);
+            TEST_LOG_I(LOGGER_ID) << "cwd: '" << std::filesystem::current_path().generic_string() << "'";
 
             exqudens::log::api::Logging::reset();
+            std::string type = exqudens::log::api::Logging::configureCommandLine({
+                (std::filesystem::current_path() / "app").generic_string(),
+                exqudens::log::api::Logging::commandLineKey(),
+                (std::filesystem::current_path() / "logging-config.txt").generic_string()
+            });
+            TEST_LOG_I(LOGGER_ID) << "type: '" << type << "'";
 
-            expectedConfigured = false;
-            PLOGI << "expectedConfigured: " << expectedConfigured;
-            actualConfigured = exqudens::log::api::Logging::isConfigured();
-            PLOGI << "actualConfigured: " << actualConfigured;
+            ASSERT_EQ(std::string("full-path: '") + (std::filesystem::current_path() / "logging-config.txt").generic_string() + "'", type);
 
-            // command line end ----------------------------------------------------------------------------------------------------
-
-            // executable dir bgn ----------------------------------------------------------------------------------------------------
-
-            arguments = {
-                (std::filesystem::path(__FILE__) / ".." / ".." / ".." / "resources" / testGroup / testCase / "test-app").generic_string(),
-
-                "--" + exqudens::log::api::Logging::getKey(),
-
-                "executable-dir.txt"
-            };
-            PLOGI << "arguments: " << TestUtils::join(arguments, ", ", "[", "]");
-
-            expectedConfigured = false;
-            PLOGI << "expectedConfigured: " << expectedConfigured;
-            actualConfigured = exqudens::log::api::Logging::isConfigured();
-            PLOGI << "actualConfigured: " << actualConfigured;
-
-            ASSERT_EQ(expectedConfigured, actualConfigured);
-
-            expectedConfiguredType = std::string("executable-dir: '");
-            expectedConfiguredType += (std::filesystem::path(__FILE__) / ".." / ".." / ".." / "resources" / testGroup / testCase / arguments.at(2)).generic_string();
-            expectedConfiguredType += "'";
-            PLOGI << "expectedConfiguredType: '" << expectedConfiguredType << "'";
-            actualConfiguredType = exqudens::log::api::Logging::configure(arguments);
-            PLOGI << "actualConfiguredType: '" << actualConfiguredType << "'";
-
-            ASSERT_EQ(expectedConfiguredType, actualConfiguredType);
-
-            expectedConfigured = true;
-            PLOGI << "expectedConfigured: " << expectedConfigured;
-            actualConfigured = exqudens::log::api::Logging::isConfigured();
-            PLOGI << "actualConfigured: " << actualConfigured;
-
-            ASSERT_EQ(expectedConfigured, actualConfigured);
-
-            expectedConfiguredType = "configured";
-            PLOGI << "expectedConfiguredType: '" << expectedConfiguredType << "'";
-            actualConfiguredType = exqudens::log::api::Logging::configure(arguments);
-            PLOGI << "actualConfiguredType: '" << actualConfiguredType << "'";
-
-            ASSERT_EQ(expectedConfiguredType, actualConfiguredType);
-
-            exqudens::log::api::Logging::reset();
-
-            expectedConfigured = false;
-            PLOGI << "expectedConfigured: " << expectedConfigured;
-            actualConfigured = exqudens::log::api::Logging::isConfigured();
-            PLOGI << "actualConfigured: " << actualConfigured;
-
-            // executable dir end ----------------------------------------------------------------------------------------------------
-
-            // current dir bgn ----------------------------------------------------------------------------------------------------
-
-            arguments = {
-                (std::filesystem::path(__FILE__) / ".." / ".." / ".." / "resources" / testGroup / "test-app").generic_string(),
-
-                "--" + exqudens::log::api::Logging::getKey(),
-
-                "current-dir.txt"
-            };
-            PLOGI << "arguments: " << TestUtils::join(arguments, ", ", "[", "]");
-
-            std::filesystem::copy(
-                std::filesystem::path(__FILE__) / ".." / ".." / ".." / "resources" / testGroup / testCase / arguments.at(2),
-                std::filesystem::path(TestConfig::getExecutableDir()),
-                std::filesystem::copy_options::overwrite_existing
-            );
-
-            expectedConfigured = false;
-            PLOGI << "expectedConfigured: " << expectedConfigured;
-            actualConfigured = exqudens::log::api::Logging::isConfigured();
-            PLOGI << "actualConfigured: " << actualConfigured;
-
-            ASSERT_EQ(expectedConfigured, actualConfigured);
-
-            expectedConfiguredType = std::string("current-dir: '");
-            expectedConfiguredType += (std::filesystem::current_path() / arguments.at(2)).generic_string();
-            expectedConfiguredType += "'";
-            PLOGI << "expectedConfiguredType: '" << expectedConfiguredType << "'";
-            actualConfiguredType = exqudens::log::api::Logging::configure(arguments);
-            PLOGI << "actualConfiguredType: '" << actualConfiguredType << "'";
-
-            ASSERT_EQ(expectedConfiguredType, actualConfiguredType);
-
-            expectedConfigured = true;
-            PLOGI << "expectedConfigured: " << expectedConfigured;
-            actualConfigured = exqudens::log::api::Logging::isConfigured();
-            PLOGI << "actualConfigured: " << actualConfigured;
-
-            ASSERT_EQ(expectedConfigured, actualConfigured);
-
-            expectedConfiguredType = "configured";
-            PLOGI << "expectedConfiguredType: '" << expectedConfiguredType << "'";
-            actualConfiguredType = exqudens::log::api::Logging::configure(arguments);
-            PLOGI << "actualConfiguredType: '" << actualConfiguredType << "'";
-
-            ASSERT_EQ(expectedConfiguredType, actualConfiguredType);
-
-            exqudens::log::api::Logging::reset();
-
-            expectedConfigured = false;
-            PLOGI << "expectedConfigured: " << expectedConfigured;
-            actualConfigured = exqudens::log::api::Logging::isConfigured();
-            PLOGI << "actualConfigured: " << actualConfigured;
-
-            // current dir end ----------------------------------------------------------------------------------------------------
-
-            EXQUDENS_LOG_DEBUG("command.line.Test") << "aaa";
-
-            std::string content = TestUtils::readFileString((std::filesystem::path(TestConfig::getExecutableDir()) / "log.txt").generic_string());
-            content = TestUtils::trim(content);
-            PLOGI << "content: '" << content << "'";
-
-            ASSERT_TRUE(content.ends_with("DEBUG [command.line.Test] aaa"));
-
-            PLOGI << "'" << testGroup << "." << testCase << "' end";
+            TEST_LOG_I(LOGGER_ID) << "end";
         } catch (const std::exception& e) {
             std::string errorMessage = TestUtils::toString(e);
-            PLOGE << errorMessage;
+            TEST_LOG_E(LOGGER_ID) << errorMessage;
+            FAIL() << errorMessage;
+        }
+    }
+
+    TEST_F(UnitTests, test2) {
+        try {
+            TEST_LOG_I(LOGGER_ID) << "bgn";
+
+            TEST_LOG_I(LOGGER_ID) << "cwd: '" << std::filesystem::current_path().generic_string() << "'";
+
+            exqudens::log::api::Logging::reset();
+            std::string type = exqudens::log::api::Logging::configureCommandLine({
+                (std::filesystem::current_path() / "dir" / "app").generic_string(),
+                exqudens::log::api::Logging::commandLineKey(),
+                "logging-config.txt"
+            });
+            TEST_LOG_I(LOGGER_ID) << "type: '" << type << "'";
+
+            ASSERT_EQ(std::string("executable-dir: '") + (std::filesystem::current_path() / "dir" / "logging-config.txt").generic_string() + "'", type);
+
+            TEST_LOG_I(LOGGER_ID) << "end";
+        } catch (const std::exception& e) {
+            std::string errorMessage = TestUtils::toString(e);
+            TEST_LOG_E(LOGGER_ID) << errorMessage;
+            FAIL() << errorMessage;
+        }
+    }
+
+    TEST_F(UnitTests, test3) {
+        try {
+            TEST_LOG_I(LOGGER_ID) << "bgn";
+
+            TEST_LOG_I(LOGGER_ID) << "cwd: '" << std::filesystem::current_path().generic_string() << "'";
+
+            exqudens::log::api::Logging::reset();
+            std::string type = exqudens::log::api::Logging::configureCommandLine({
+                (std::filesystem::current_path() / "dir" / "app").generic_string(),
+                exqudens::log::api::Logging::commandLineKey(),
+                "logging-config.txt"
+            });
+            TEST_LOG_I(LOGGER_ID) << "type: '" << type << "'";
+
+            ASSERT_EQ(std::string("current-dir: '") + (std::filesystem::current_path() / "logging-config.txt").generic_string() + "'", type);
+
+            TEST_LOG_I(LOGGER_ID) << "end";
+        } catch (const std::exception& e) {
+            std::string errorMessage = TestUtils::toString(e);
+            TEST_LOG_E(LOGGER_ID) << errorMessage;
             FAIL() << errorMessage;
         }
     }

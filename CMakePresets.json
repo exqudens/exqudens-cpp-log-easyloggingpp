@@ -104,6 +104,10 @@
           "type": "BOOL",
           "value": false
         },
+        "CMAKE_BUILD_TYPE": {
+          "type": "STRING",
+          "value": "Debug"
+        },
         "CMAKE_MSVC_RUNTIME_LIBRARY": {
           "type": "STRING",
           "value": "MultiThreadedDebug"
