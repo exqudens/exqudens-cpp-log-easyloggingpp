@@ -1,28 +1,42 @@
 cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
 
-set(USE_CONAN "true" CACHE BOOL "...")
-set(SKIP_TEST "false" CACHE BOOL "...")
+set(CMAKE_UTIL_FILE "" CACHE STRING "...")
+
+if("${CMAKE_UTIL_FILE}" STREQUAL "")
+    if(DEFINED "ENV{CMAKE_UTIL_FILE}")
+        set(CMAKE_UTIL_FILE "$ENV{CMAKE_UTIL_FILE}" CACHE STRING "..." FORCE)
+    else()
+        find_program(CONAN_COMMAND NAMES "conan.exe" "conan" PATHS ENV CONAN_PATH ENV PATH REQUIRED NO_CACHE NO_DEFAULT_PATH)
+        execute_process(
+            COMMAND "${CONAN_COMMAND}" "install"
+                    "--output-folder" "${CMAKE_CURRENT_BINARY_DIR}/tmp/conan/exqudens-cmake"
+                    "${CMAKE_SOURCE_DIR}/cmake-conanfile.py"
+            COMMAND_ECHO "STDERR"
+            ENCODING "UTF-8"
+            COMMAND_ERROR_IS_FATAL "ANY"
+        )
+        if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/tmp/conan/exqudens-cmake/cmake/util.cmake")
+            message(FATAL_ERROR "Not exists: '${CMAKE_CURRENT_BINARY_DIR}/tmp/conan/exqudens-cmake/cmake/util.cmake'")
+        endif()
+        file(COPY "${CMAKE_CURRENT_BINARY_DIR}/tmp/conan/exqudens-cmake/cmake/util.cmake" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/../common")
+        set(CMAKE_UTIL_FILE "${CMAKE_CURRENT_BINARY_DIR}/../common/util.cmake")
+        cmake_path(NORMAL_PATH "CMAKE_UTIL_FILE")
+        set(CMAKE_UTIL_FILE "${CMAKE_UTIL_FILE}" CACHE STRING "..." FORCE)
+    endif()
+endif()
+
+set(USE_CONAN "1" CACHE BOOL "...")
+set(SKIP_TEST "0" CACHE BOOL "...")
 set(TEST_GROUP ".*UnitTests" CACHE STRING "...")
 set(TEST_CASE "all" CACHE STRING "...")
 
-block()
-    set(fileName "util.cmake")
-    if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/../common/${fileName}")
-        file(REMOVE "${CMAKE_CURRENT_BINARY_DIR}/tmp/${fileName}")
-        file(DOWNLOAD
-            "https://raw.githubusercontent.com/exqudens/exqudens-cmake/2.0.0/src/main/cmake/${fileName}"
-            "${CMAKE_CURRENT_BINARY_DIR}/tmp/${fileName}"
-            EXPECTED_MD5 "7e375203230f05ebfb625ad455854449"
-            STATUS downloadStatus
-        )
-        if(NOT "${downloadStatus}" STREQUAL "0;\"No error\"")
-            message(FATAL_ERROR "downloadStatus: '${downloadStatus}'")
-        endif()
-        file(COPY "${CMAKE_CURRENT_BINARY_DIR}/tmp/${fileName}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/../common")
-    endif()
-endblock()
+message(STATUS "CMAKE_UTIL_FILE: '${CMAKE_UTIL_FILE}'")
+message(STATUS "USE_CONAN: '${USE_CONAN}'")
+message(STATUS "SKIP_TEST: '${SKIP_TEST}'")
+message(STATUS "TEST_GROUP: '${TEST_GROUP}'")
+message(STATUS "TEST_CASE: '${TEST_CASE}'")
 
-include("${CMAKE_CURRENT_BINARY_DIR}/../common/util.cmake")
+include("${CMAKE_UTIL_FILE}")
 
 string(REPLACE "." ";" PRESET_NAME_ELEMENTS "${PRESET_NAME}")
 if("msvc-16-x64-x64" IN_LIST "PRESET_NAME_ELEMENTS")
@@ -64,7 +78,8 @@ string(STRIP "${RAW_NAME}" NAME)
 string(STRIP "${RAW_VERSION}" VERSION)
 project("${NAME}" VERSION "${VERSION}" LANGUAGES "NONE")
 
-message(STATUS "project: '${PROJECT_NAME}-${PROJECT_VERSION}'")
+message(STATUS "PROJECT_NAME: '${PROJECT_NAME}'")
+message(STATUS "PROJECT_VERSION: '${PROJECT_VERSION}'")
 
 string(REPLACE "_" "-" BASE_DIR "${PROJECT_NAME}")
 string(REPLACE "-cpp-" "-" BASE_DIR "${BASE_DIR}")
